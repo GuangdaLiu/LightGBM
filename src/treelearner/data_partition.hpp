@@ -105,6 +105,9 @@ class DataPartition {
     // get leaf boundary
     const data_size_t begin = leaf_begin_[leaf];
     const data_size_t cnt = leaf_count_[leaf];
+    // Log::Info("indices_[1000]: %d", indices_[1000]);
+    // Log::Info("begin: %d", begin);
+    // Log::Info("cnt: %d", cnt);
     auto left_start = indices_.data() + begin;
     const auto left_cnt = runner_.Run<false>(
         cnt,

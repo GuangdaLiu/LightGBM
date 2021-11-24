@@ -296,6 +296,7 @@ bool GBDT::TrainOneIter(const score_t* gradients, const score_t* hessians) {
       init_scores[cur_tree_id] = BoostFromAverage(cur_tree_id, true);
     }
     Boosting();
+    Log::Info("gradients_[0] after Boosting: %f", gradients_[0]);
     gradients = gradients_.data();
     hessians = hessians_.data();
   } else if (gradients != nullptr) {
@@ -333,6 +334,7 @@ bool GBDT::TrainOneIter(const score_t* gradients, const score_t* hessians) {
         hess = hessians_.data() + offset;
       }
       bool is_first_tree = models_.size() < static_cast<size_t>(num_tree_per_iteration_);
+      Log::Info("grad[0]: %f", grad[0]);
       new_tree.reset(tree_learner_->Train(grad, hess, is_first_tree));
     }
 
@@ -430,6 +432,8 @@ void GBDT::UpdateScore(const Tree* tree, const int cur_tree_id) {
     train_score_updater_->AddScore(tree_learner_.get(), tree, cur_tree_id);
 
     const data_size_t bag_data_cnt = data_sample_strategy_->bag_data_cnt();
+    Log::Info("bag_data_cnt: %d", bag_data_cnt);
+    Log::Info("data_sample_strategy_->bag_data_indices()[0]: %d", data_sample_strategy_->bag_data_indices()[0]);
     // we need to predict out-of-bag scores of data for boosting
     if (num_data_ - bag_data_cnt > 0) {
       train_score_updater_->AddScore(tree, data_sample_strategy_->bag_data_indices().data() + bag_data_cnt, num_data_ - bag_data_cnt, cur_tree_id);

@@ -200,6 +200,7 @@ Tree* SerialTreeLearner::Train(const score_t* gradients, const score_t *hessians
       break;
     }
     // split tree with best leaf
+    // Log::Info("Start Split");
     Split(tree_ptr, best_leaf, &left_leaf, &right_leaf);
     cur_depth = std::max(cur_depth, tree->leaf_depth(left_leaf));
   }
@@ -567,6 +568,7 @@ void SerialTreeLearner::SplitInner(Tree* tree, int best_leaf, int* left_leaf,
   SplitInfo& best_split_info = best_split_per_leaf_[best_leaf];
   const int inner_feature_index =
       train_data_->InnerFeatureIndex(best_split_info.feature);
+  // Log::Info("best_leaf: %d, best_split_info.feature: %d", best_leaf,best_split_info.feature);
   if (cegb_ != nullptr) {
     cegb_->UpdateLeafBestSplits(tree, best_leaf, &best_split_info,
                                 &best_split_per_leaf_);
@@ -584,11 +586,13 @@ void SerialTreeLearner::SplitInner(Tree* tree, int best_leaf, int* left_leaf,
   if (is_numerical_split) {
     auto threshold_double = train_data_->RealThreshold(
         inner_feature_index, best_split_info.threshold);
+    // Log::Info("best_leaf: %d, inner_feature_index: %d, next_leaf_id %d, best_split_info.default_left: %d",best_leaf,inner_feature_index,next_leaf_id,best_split_info.default_left);
     data_partition_->Split(best_leaf, train_data_, inner_feature_index,
                            &best_split_info.threshold, 1,
                            best_split_info.default_left, next_leaf_id);
     if (update_cnt) {
       // don't need to update this in data-based parallel model
+      // Log::Info("left_leaf: %d", *left_leaf);
       best_split_info.left_count = data_partition_->leaf_count(*left_leaf);
       best_split_info.right_count = data_partition_->leaf_count(next_leaf_id);
     }
@@ -649,6 +653,8 @@ void SerialTreeLearner::SplitInner(Tree* tree, int best_leaf, int* left_leaf,
 #endif
 
   // init the leaves that used on next iteration
+  // Log::Info("best_split_info.left_count: %d", best_split_info.left_count);
+  // Log::Info("best_split_info.right_count: %d", best_split_info.right_count);
   if (best_split_info.left_count < best_split_info.right_count) {
     CHECK_GT(best_split_info.left_count, 0);
     smaller_leaf_splits_->Init(*left_leaf, data_partition_.get(),

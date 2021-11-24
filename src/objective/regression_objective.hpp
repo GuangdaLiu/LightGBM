@@ -126,6 +126,8 @@ class RegressionL2loss: public ObjectiveFunction {
 
   void GetGradients(const double* score, score_t* gradients,
                     score_t* hessians) const override {
+    Log::Info("score[0]: %f", score[0]);
+    Log::Info("label_[0]: %f", label_[0]);
     if (weights_ == nullptr) {
       #pragma omp parallel for schedule(static)
       for (data_size_t i = 0; i < num_data_; ++i) {
