@@ -347,7 +347,10 @@ bool GBDT::TrainOneIter(const score_t* gradients, const score_t* hessians) {
       // shrinkage by learning rate
       new_tree->Shrinkage(shrinkage_rate_);
       // update score
+      int64_t out_len = 0;
+      Log::Info("score[0] before UpdateScore: %f", GetTrainingScore(&out_len)[0]);
       UpdateScore(new_tree.get(), cur_tree_id);
+      Log::Info("score[0] after UpdateScore: %f", GetTrainingScore(&out_len)[0]);
       if (std::fabs(init_scores[cur_tree_id]) > kEpsilon) {
         new_tree->AddBias(init_scores[cur_tree_id]);
       }
@@ -431,12 +434,15 @@ void GBDT::UpdateScore(const Tree* tree, const int cur_tree_id) {
   if (!data_sample_strategy_->is_use_subset()) {
     train_score_updater_->AddScore(tree_learner_.get(), tree, cur_tree_id);
 
-    const data_size_t bag_data_cnt = data_sample_strategy_->bag_data_cnt();
-    Log::Info("bag_data_cnt: %d", bag_data_cnt);
-    Log::Info("data_sample_strategy_->bag_data_indices()[0]: %d", data_sample_strategy_->bag_data_indices()[0]);
+    const data_size_t& bag_data_cnt = data_sample_strategy_->bag_data_cnt();
+    const std::vector<data_size_t, Common::AlignmentAllocator<data_size_t, kAlignedSize>>& bag_data_indices = data_sample_strategy_->bag_data_indices();
+    Log::Info("bag_data_cnt: %d, indices.size: %d", bag_data_cnt, bag_data_indices.size());
+    if (bag_data_indices.size()>0) {
+      Log::Info("indices[0]: %d", bag_data_indices[0]);
+    }
     // we need to predict out-of-bag scores of data for boosting
     if (num_data_ - bag_data_cnt > 0) {
-      train_score_updater_->AddScore(tree, data_sample_strategy_->bag_data_indices().data() + bag_data_cnt, num_data_ - bag_data_cnt, cur_tree_id);
+      train_score_updater_->AddScore(tree, bag_data_indices.data() + bag_data_cnt, num_data_ - bag_data_cnt, cur_tree_id);
     }
 
   } else {
@@ -628,6 +634,7 @@ void GBDT::ResetTrainingData(const Dataset* train_data, const ObjectiveFunction*
   }
 
   objective_function_ = objective_function;
+  data_sample_strategy_->UpdateObjectiveFunction(objective_function);
   if (objective_function_ != nullptr) {
     CHECK_EQ(num_tree_per_iteration_, objective_function_->NumModelPerIteration());
     if (objective_function_->IsRenewTreeOutput() && !config_->monotone_constraints.empty()) {
