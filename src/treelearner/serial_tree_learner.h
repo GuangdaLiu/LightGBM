@@ -92,6 +92,7 @@ class SerialTreeLearner: public TreeLearner {
       share_state_->SetSubrowCopied(false);
       share_state_->bagging_use_indices = used_indices;
       share_state_->bagging_indices_cnt = num_data;
+      Log::Info("share_state_->bagging_use_indices[500,800,1600]: %d, %d, %d, bagging_indices_cnt: %d", share_state_->bagging_use_indices[500], share_state_->bagging_use_indices[800], share_state_->bagging_use_indices[1600], share_state_->bagging_indices_cnt);
     }
   }
 

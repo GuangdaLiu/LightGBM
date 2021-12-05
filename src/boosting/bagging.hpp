@@ -15,7 +15,7 @@ class BAGGING : public SampleStrategy {
   }
   ~BAGGING() {}
 
-  void Bagging(int iter, TreeLearner* tree_learner, score_t* gradients, score_t* hessians) override {
+  void Bagging(int iter, const Dataset* train_data, TreeLearner* tree_learner, score_t* gradients, score_t* hessians) override {
     Common::FunctionTimer fun_timer("GBDT::Bagging", global_timer);
     // if need bagging
     if ((bag_data_cnt_ < num_data_ && iter % config_->bagging_freq == 0) ||

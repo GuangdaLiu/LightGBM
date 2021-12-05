@@ -312,7 +312,7 @@ bool GBDT::TrainOneIter(const score_t* gradients, const score_t* hessians) {
     }
   }
   // bagging logic
-  data_sample_strategy_->Bagging(iter_, tree_learner_.get(), gradients_.data(), hessians_.data());
+  data_sample_strategy_->Bagging(iter_, train_data_, tree_learner_.get(), gradients_.data(), hessians_.data());
   const bool is_use_subset = data_sample_strategy_->is_use_subset();
   const data_size_t bag_data_cnt = data_sample_strategy_->bag_data_cnt();
   const std::vector<data_size_t, Common::AlignmentAllocator<data_size_t, kAlignedSize>>& bag_data_indices = data_sample_strategy_->bag_data_indices();
@@ -334,8 +334,12 @@ bool GBDT::TrainOneIter(const score_t* gradients, const score_t* hessians) {
         hess = hessians_.data() + offset;
       }
       bool is_first_tree = models_.size() < static_cast<size_t>(num_tree_per_iteration_);
-      Log::Info("grad[0]: %f", grad[0]);
+      Log::Info("grad[50]: %f, hess[0]:%f, is_first_tree: %d", grad[50], hess[0], is_first_tree);
+      Log::Info("grad[101]: %f, hess[100]:%f, is_first_tree: %d", grad[101], hess[100], is_first_tree);
+      Log::Info("grad[1001]: %f, hess[1000]:%f, is_first_tree: %d", grad[1001], hess[1000], is_first_tree);
+      Log::Info("tree_learner_: %x", tree_learner_.get());
       new_tree.reset(tree_learner_->Train(grad, hess, is_first_tree));
+      Log::Info("new_tree->num_leaves() after reset: %d", new_tree->num_leaves());
     }
 
     if (new_tree->num_leaves() > 1) {
@@ -448,6 +452,8 @@ void GBDT::UpdateScore(const Tree* tree, const int cur_tree_id) {
   } else {
     train_score_updater_->AddScore(tree, cur_tree_id);
   }
+	int64_t out_len = 0;
+	Log::Info("score[0] after UpdateScore.AddScore: %f", GetTrainingScore(&out_len)[0]);
 
 
   // update validation score
@@ -629,6 +635,7 @@ double GBDT::GetLowerBoundValue() const {
 
 void GBDT::ResetTrainingData(const Dataset* train_data, const ObjectiveFunction* objective_function,
                              const std::vector<const Metric*>& training_metrics) {
+	Log::Info("Is GBDT::ResetTraingData..");
   if (train_data != train_data_ && !train_data_->CheckAlign(*train_data)) {
     Log::Fatal("Cannot reset training data, since new training data has different bin mappers");
   }

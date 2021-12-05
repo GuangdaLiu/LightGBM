@@ -187,6 +187,7 @@ Tree* SerialTreeLearner::Train(const score_t* gradients, const score_t *hessians
   for (int split = init_splits; split < config_->num_leaves - 1; ++split) {
     // some initial works before finding best split
     if (BeforeFindBestSplit(tree_ptr, left_leaf, right_leaf)) {
+      // Log::Info("Split %d, left_leaf %d, right_leaf %d", split, left_leaf, right_leaf);
       // find best threshold for every feature
       FindBestSplits(tree_ptr);
     }
@@ -206,6 +207,7 @@ Tree* SerialTreeLearner::Train(const score_t* gradients, const score_t *hessians
   }
 
   Log::Debug("Trained a tree with leaves = %d and depth = %d", tree->num_leaves(), cur_depth);
+  Log::Info("Trained a tree with leaves = %d and depth = %d", tree->num_leaves(), cur_depth);
   return tree.release();
 }
 

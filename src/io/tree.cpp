@@ -148,6 +148,7 @@ int Tree::SplitCategorical(int leaf, int feature, int real_feature, const uint32
 
 
 void Tree::AddPredictionToScore(const Dataset* data, data_size_t num_data, double* score) const {
+  // Log::Info("AddPredictionToScore::\nis_linear_: %d, num_cat_: %d\ndata->num_features(): %d, num_leaves: %d", is_linear_, num_cat_, data->num_features(), num_leaves_);
   if (!is_linear_ && num_leaves_ <= 1) {
     if (leaf_value_[0] != 0.0f) {
 #pragma omp parallel for schedule(static, 512) if (num_data >= 1024)

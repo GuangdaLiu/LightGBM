@@ -16,7 +16,7 @@ class SampleStrategy {
   SampleStrategy() : balanced_bagging_(false), bagging_runner_(0, bagging_rand_block_) {};
   virtual ~SampleStrategy() {};
   static SampleStrategy* CreateSampleStrategy(const Config* config, const Dataset* train_data, const ObjectiveFunction* objective_function, int num_tree_per_iteration);
-  virtual void Bagging(int iter, TreeLearner* tree_learner, score_t* gradients, score_t* hessians) = 0;
+  virtual void Bagging(int iter, const Dataset* train_data, TreeLearner* tree_learner, score_t* gradients, score_t* hessians) = 0;
   virtual void ResetGOSS() = 0;
   virtual void ResetBaggingConfig(const Config* config, bool is_change_dataset, 
           std::vector<score_t, Common::AlignmentAllocator<score_t, kAlignedSize>>& gradients, 

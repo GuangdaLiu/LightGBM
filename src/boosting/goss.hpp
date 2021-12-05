@@ -19,7 +19,7 @@ class GOSS : public SampleStrategy {
   ~GOSS() {
   }
 
-  void Bagging(int iter, TreeLearner* tree_learner, score_t* gradients, score_t* hessians) override {
+  void Bagging(int iter, const Dataset* train_data, TreeLearner* tree_learner, score_t* gradients, score_t* hessians) override {
     bag_data_cnt_ = num_data_;
     // not subsample for first iterations
     if (iter < static_cast<int>(1.0f / config_->learning_rate)) { return; }
@@ -37,10 +37,13 @@ class GOSS : public SampleStrategy {
     if (!is_use_subset_) {
       tree_learner->SetBaggingData(nullptr, bag_data_indices_.data(), bag_data_cnt_);
     } else {
+      Log::Info("bag_data_indices_.size(): %d, bag_data_cnt_: %d", bag_data_indices_.size(), bag_data_cnt_);
+      Log::Info("bag_data_indices_[100,1000,2000]: %d, %d, %d", bag_data_indices_[100], bag_data_indices_[1000], bag_data_indices_[2000]);
       // get subset
       tmp_subset_->ReSize(bag_data_cnt_);
-      tmp_subset_->CopySubrow(train_data_, bag_data_indices_.data(),
+      tmp_subset_->CopySubrow(train_data, bag_data_indices_.data(),
                               bag_data_cnt_, false);
+      Log::Info("Strategy::tmp_subset_ %x after copy from: %x", tmp_subset_.get(), train_data);
       tree_learner->SetBaggingData(tmp_subset_.get(), bag_data_indices_.data(),
                                     bag_data_cnt_);
     }
@@ -67,6 +70,7 @@ class GOSS : public SampleStrategy {
       bag_data_cnt = std::max(1, bag_data_cnt);
       tmp_subset_.reset(new Dataset(bag_data_cnt));
       tmp_subset_->CopyFeatureMapperFrom(train_data_);
+      Log::Info("tmp_subset_ reset as from %x", train_data_);
       is_use_subset_ = true;
     }
     // flag to not bagging first
