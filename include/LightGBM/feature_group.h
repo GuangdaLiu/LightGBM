@@ -522,6 +522,10 @@ class FeatureGroup {
     }
   }
 
+  const std::vector<double>& bin_upper_bound_of(int sub_feature_index) {
+    return bin_mappers_[sub_feature_index]->bin_upper_bound();
+  }
+
  private:
   void CreateBinData(int num_data, bool is_multi_val, bool force_dense, bool force_sparse) {
     if (is_multi_val) {

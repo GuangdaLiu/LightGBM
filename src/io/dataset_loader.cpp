@@ -1144,55 +1144,126 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
   auto& ref_text_data = *text_data;
   std::vector<float> feature_row(dataset->num_features_);
   if (predict_fun_ == nullptr) {
-    OMP_INIT_EX();
-    // if doesn't need to prediction with initial model
-    #pragma omp parallel for schedule(static) private(oneline_features) firstprivate(tmp_label, feature_row)
-    for (data_size_t i = 0; i < dataset->num_data_; ++i) {
-      OMP_LOOP_EX_BEGIN();
-      const int tid = omp_get_thread_num();
-      oneline_features.clear();
-      // parser
-      parser->ParseOneLine(ref_text_data[i].c_str(), &oneline_features, &tmp_label);
-      // set label
-      dataset->metadata_.SetLabelAt(i, static_cast<label_t>(tmp_label));
-      // free processed line:
-      ref_text_data[i].clear();
-      // shrink_to_fit will be very slow in linux, and seems not free memory, disable for now
-      // text_reader_->Lines()[i].shrink_to_fit();
-      std::vector<bool> is_feature_added(dataset->num_features_, false);
-      // push data
-      for (auto& inner_data : oneline_features) {
-        if (inner_data.first >= dataset->num_total_features_) { continue; }
-        int feature_idx = dataset->used_feature_map_[inner_data.first];
-        if (feature_idx >= 0) {
-          is_feature_added[feature_idx] = true;
-          // if is used feature
-          int group = dataset->feature2group_[feature_idx];
-          int sub_feature = dataset->feature2subfeature_[feature_idx];
-          dataset->feature_groups_[group]->PushData(tid, sub_feature, i, inner_data.second);
-          if (dataset->has_raw()) {
-            feature_row[feature_idx] = static_cast<float>(inner_data.second);
-          }
-        } else {
-          if (inner_data.first == weight_idx_) {
-            dataset->metadata_.SetWeightAt(i, static_cast<label_t>(inner_data.second));
-          } else if (inner_data.first == group_idx_) {
-            dataset->metadata_.SetQueryAt(i, static_cast<data_size_t>(inner_data.second));
-          }
-        }
+    if (config_.device_type == std::string("cuda")) {
+      // copy BinMbin_upper_bound_  to cuda
+      double* cuda_bin_upper_bounds_ptr[dataset->num_total_features_] = {nullptr};
+      int bin_upper_bounds_size[dataset->num_total_features_] = {0};
+      for (int i = 0; i < dataset->num_total_features_; i++) {
+        int feature_idx = dataset->used_feature_map_[i];
+        if (feature_idx < 0) { continue; }
+        int group = dataset->feature2group_[feature_idx];
+        int sub_feature = dataset->feature2subfeature_[feature_idx];
+        const std::vector<double>& bin_upper_bound = dataset->feature_groups_[group]->bin_upper_bound_of(sub_feature);
+        AllocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[i], bin_upper_bound.size(), __FILE__, __LINE__);
+        CopyFromHostToCUDADeviceOuter<double>(cuda_bin_upper_bounds_ptr[i], bin_upper_bound.data(), bin_upper_bound.size(), __FILE__, __LINE__);
+        bin_upper_bounds_size[i] = bin_upper_bound.size();
       }
-      if (dataset->has_raw()) {
-        for (size_t j = 0; j < feature_row.size(); ++j) {
-          int feat_ind = dataset->numeric_feature_map_[j];
-          if (feat_ind >= 0) {
-            dataset->raw_data_[feat_ind][i] = feature_row[j];
+      int* cuda_bin_upper_bounds_size = nullptr;
+      AllocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size, dataset->num_total_features_, __FILE__, __LINE__);
+      CopyFromHostToCUDADeviceOuter<int>(cuda_bin_upper_bounds_size, bin_upper_bounds_size, dataset->num_total_features_, __FILE__, __LINE__);
+      // split whole dataset into batches
+      // data_size_t cuda_batch_size = (4*1024*1024*1024) / (sizeof(double) * dataset->num_total_features_);
+      data_size_t cuda_batch_size = 25*1024*1024;
+      int num_cuda_batch = (dataset->num_data_ + cuda_batch_size - 1) / cuda_batch_size;
+      for (int cur_cuda_batch = 0; cur_cuda_batch < num_cuda_batch; cur_cuda_batch++) {
+        // process data within a batch
+        data_size_t cuda_batch_start = cur_cuda_batch * cuda_batch_size;
+        double batch_value[cuda_batch_size][dataset->num_total_features_] = {0.0f};
+        // used to indicates which lines should do mapping, do not confound with `is_feature_added` 
+        bool should_feature_mapped[dataset->num_total_features_] = {false};   // (differ across lines or not ??)
+        std::vector<bool> is_feature_added(dataset->num_features_, false);
+        data_size_t cur_cuda_batch_size = std::min(cuda_batch_size, dataset->num_data_ - cuda_batch_start);
+        OMP_INIT_EX();
+        #pragma omp parallel for schedule(static) private(oneline_features) firstprivate(tmp_label)
+        for (data_size_t i = 0; i < cur_cuda_batch_size; i++) {
+          OMP_LOOP_EX_BEGIN();
+          const int tid = omp_get_thread_num();
+          oneline_features.clear();
+          parser->ParseOneLine(ref_text_data[i].c_str(), &oneline_features, &tmp_label);
+          dataset->metadata_.SetLabelAt(i, static_cast<label_t>(tmp_label));
+          ref_text_data[i].clear();
+          for (auto& inner_data : oneline_features) {
+            if (inner_data.first >= dataset->num_total_features_) { continue; }
+            int feature_idx = dataset->used_feature_map_[inner_data.first];
+            if (feature_idx >= 0) {
+              is_feature_added[feature_idx] = true;
+              batch_value[i][inner_data.first] = inner_data.second;
+              should_feature_mapped[inner_data.first] = true;
+            } else {
+              if (inner_data.first == weight_idx_) {
+                dataset->metadata_.SetWeightAt(i, static_cast<label_t>(inner_data.second));
+              } else if (inner_data.first == group_idx_) {
+                dataset->metadata_.SetQueryAt(i, static_cast<data_size_t>(inner_data.second));
+              }
+            }
           }
+          dataset->FinishOneRow(tid, i, is_feature_added);
+          OMP_LOOP_EX_END();
         }
+        OMP_THROW_EX();
+        // copy values and should_feature_mapped to cuda
+        double* cuda_batch_value_ptr[cuda_batch_size] = {nullptr};
+        for (int i = 0; i < cuda_batch_size; i++) {
+          AllocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
+          CopyFromHostToCUDADeviceOuter<double>(cuda_batch_value_ptr[i], batch_value[i], dataset->num_total_features_, __FILE__, __LINE__);
+        }
+        bool* cuda_should_feature_mapped = nullptr;
+        AllocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
+        CopyFromHostToCUDADeviceOuter<bool>(cuda_should_feature_mapped, should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
+        LaunchValueToBinKernel(cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
       }
-      dataset->FinishOneRow(tid, i, is_feature_added);
-      OMP_LOOP_EX_END();
     }
-    OMP_THROW_EX();
+    else{
+      OMP_INIT_EX();
+      // if doesn't need to prediction with initial model
+      #pragma omp parallel for schedule(static) private(oneline_features) firstprivate(tmp_label, feature_row)
+      for (data_size_t i = 0; i < dataset->num_data_; ++i) {
+        OMP_LOOP_EX_BEGIN();
+        const int tid = omp_get_thread_num();
+        oneline_features.clear();
+        // parser
+        parser->ParseOneLine(ref_text_data[i].c_str(), &oneline_features, &tmp_label);
+        // set label
+        dataset->metadata_.SetLabelAt(i, static_cast<label_t>(tmp_label));
+        // free processed line:
+        ref_text_data[i].clear();
+        // shrink_to_fit will be very slow in linux, and seems not free memory, disable for now
+        // text_reader_->Lines()[i].shrink_to_fit();
+        std::vector<bool> is_feature_added(dataset->num_features_, false);
+        // push data
+        for (auto& inner_data : oneline_features) {
+          if (inner_data.first >= dataset->num_total_features_) { continue; }
+          int feature_idx = dataset->used_feature_map_[inner_data.first];
+          if (feature_idx >= 0) {
+            is_feature_added[feature_idx] = true;
+            // if is used feature
+            int group = dataset->feature2group_[feature_idx];
+            int sub_feature = dataset->feature2subfeature_[feature_idx];
+            dataset->feature_groups_[group]->PushData(tid, sub_feature, i, inner_data.second);
+            if (dataset->has_raw()) {
+              feature_row[feature_idx] = static_cast<float>(inner_data.second);
+            }
+          } else {
+            if (inner_data.first == weight_idx_) {
+              dataset->metadata_.SetWeightAt(i, static_cast<label_t>(inner_data.second));
+            } else if (inner_data.first == group_idx_) {
+              dataset->metadata_.SetQueryAt(i, static_cast<data_size_t>(inner_data.second));
+            }
+          }
+        }
+        if (dataset->has_raw()) {
+          for (size_t j = 0; j < feature_row.size(); ++j) {
+            int feat_ind = dataset->numeric_feature_map_[j];
+            if (feat_ind >= 0) {
+              dataset->raw_data_[feat_ind][i] = feature_row[j];
+            }
+          }
+        }
+        dataset->FinishOneRow(tid, i, is_feature_added);
+        OMP_LOOP_EX_END();
+      }
+      OMP_THROW_EX();
+    }
   } else {
     OMP_INIT_EX();
     // if need to prediction with initial model
