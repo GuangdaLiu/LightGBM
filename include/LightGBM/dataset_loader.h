@@ -58,7 +58,7 @@ class DatasetLoader {
   /*! \brief Extract local features from memory */
   void ExtractFeaturesFromMemory(std::vector<std::string>* text_data, const Parser* parser, Dataset* dataset);
 
-  void LaunchValueToBinKernel(double* cuda_bin_upper_bounds_ptr[], int cuda_bin_upper_bounds_size[], bool cuda_should_feature_mapped[], double* cuda_batch_value_ptr[], data_size_t cur_cuda_batch_size, int num_total_features);
+  void LaunchValueToBinKernel(double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], const bool cuda_should_feature_mapped[], double* cuda_batch_value_ptr[], const data_size_t cur_cuda_batch_size, const int num_total_features);
 
   /*! \brief Extract local features from file */
   void ExtractFeaturesFromFile(const char* filename, const Parser* parser, const std::vector<data_size_t>& used_data_indices, Dataset* dataset);

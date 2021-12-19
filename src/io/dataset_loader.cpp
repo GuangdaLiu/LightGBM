@@ -1165,7 +1165,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
       Log::Info("Finish copying %d bin_upper_bound", dataset->num_total_features_);
       // split whole dataset into batches
       // data_size_t cuda_batch_size = (4*1024*1024*1024) / (sizeof(double) * dataset->num_total_features_);
-      data_size_t cuda_batch_size = 25*1024*1024;
+      const data_size_t cuda_batch_size = 25*1024*1024;
       int num_cuda_batch = (dataset->num_data_ + cuda_batch_size - 1) / cuda_batch_size;
       for (int cur_cuda_batch = 0; cur_cuda_batch < num_cuda_batch; cur_cuda_batch++) {
         // process data within a batch
@@ -1206,7 +1206,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         OMP_THROW_EX();
         Log::Info("Batch %d finishes parsing", cur_cuda_batch);
         // copy values and should_feature_mapped to cuda
-        double* cuda_batch_value_ptr[cuda_batch_size] = {nullptr};
+        double* cuda_batch_value_ptr[cur_cuda_batch_size] = {nullptr};
         for (int i = 0; i < cur_cuda_batch_size; i++) {
           AllocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
           CopyFromHostToCUDADeviceOuter<double>(cuda_batch_value_ptr[i], batch_value[i], dataset->num_total_features_, __FILE__, __LINE__);
