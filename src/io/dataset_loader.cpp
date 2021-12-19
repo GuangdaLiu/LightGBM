@@ -1219,9 +1219,9 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         // temporarily store bins in this 2d array
         uint32_t* cuda_batch_bins_ptr[cur_cuda_batch_size] = {nullptr};
         for (int i = 0; i < cur_cuda_batch_size; i++) {
-          AllocateCUDAMemoryOuter<double>(&cuda_batch_bins_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
+          AllocateCUDAMemoryOuter<uint32_t>(&cuda_batch_bins_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
         }
-        LaunchValueToBinKernel(cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
+        LaunchValueToBinKernel(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
         Log::Info("ValueToBinKernel finishes");
       }
     }

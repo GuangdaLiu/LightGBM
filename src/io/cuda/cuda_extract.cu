@@ -31,7 +31,7 @@ void DatasetLoader::LaunchValueToBinKernel(uint32_t* cuda_batch_bins_ptr[], doub
   const int num_threads_per_block = 1024;
   int num_blocks_for_row = (cur_cuda_batch_size + num_threads_per_block - 1) / num_threads_per_block;
   dim3 num_blocks(num_blocks_for_row, num_total_features);
-  ValueToBinKernel<<<num_blocks, num_threads_per_block>>>(cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size);
+  ValueToBinKernel<<<num_blocks, num_threads_per_block>>>(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size);
 }
   
 }
