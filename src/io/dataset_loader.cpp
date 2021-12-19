@@ -1223,6 +1223,15 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         }
         LaunchValueToBinKernel(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
         Log::Info("ValueToBinKernel finishes");
+        // free useless space
+        DeallocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, __FILE__, __LINE__);
+        for (int i = 0; i < cur_cuda_batch_size; i++) {
+          DeallocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], __FILE__, __LINE__);
+        }
+      }
+      DeallocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size,  __FILE__, __LINE__);
+      for (int i = 0; i < dataset->num_total_features_; i++) {
+        DeallocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[i],  __FILE__, __LINE__);
       }
     }
     else{
