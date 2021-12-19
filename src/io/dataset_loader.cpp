@@ -1139,6 +1139,7 @@ void DatasetLoader::ConstructBinMappersFromTextData(int rank, int num_machines,
 
 /*! \brief Extract local features from memory */
 void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_data, const Parser* parser, Dataset* dataset) {
+  auto t1 = std::chrono::high_resolution_clock::now();
   std::vector<std::pair<int, double>> oneline_features;
   double tmp_label = 0.0f;
   auto& ref_text_data = *text_data;
@@ -1215,6 +1216,11 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         bool* cuda_should_feature_mapped = nullptr;
         AllocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
         CopyFromHostToCUDADeviceOuter<bool>(cuda_should_feature_mapped, should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
+        // temporarily store bins in this 2d array
+        uint32_t* cuda_batch_bins_ptr[cur_cuda_batch_size] = {nullptr};
+        for (int i = 0; i < cur_cuda_batch_size; i++) {
+          AllocateCUDAMemoryOuter<double>(&cuda_batch_bins_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
+        }
         LaunchValueToBinKernel(cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
         Log::Info("ValueToBinKernel finishes");
       }
@@ -1333,6 +1339,9 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
   dataset->FinishLoad();
   // text data can be free after loaded feature values
   text_data->clear();
+  auto t2 = std::chrono::high_resolution_clock::now();
+  Log::Info("ExtractFeaturesFromMemory in %.3f seconds",
+            std::chrono::duration<double, std::milli>(t2 - t1) * 1e-3);
 }
 
 /*! \brief Extract local features from file */
