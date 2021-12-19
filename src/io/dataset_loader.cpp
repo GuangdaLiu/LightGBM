@@ -1145,6 +1145,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
   std::vector<float> feature_row(dataset->num_features_);
   if (predict_fun_ == nullptr) {
     if (config_.device_type == std::string("cuda")) {
+      Log::Info("Using cuda ExtractFeaturesFromMemory()");
       // copy BinMbin_upper_bound_  to cuda
       double* cuda_bin_upper_bounds_ptr[dataset->num_total_features_] = {nullptr};
       int bin_upper_bounds_size[dataset->num_total_features_] = {0};
@@ -1161,6 +1162,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
       int* cuda_bin_upper_bounds_size = nullptr;
       AllocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size, dataset->num_total_features_, __FILE__, __LINE__);
       CopyFromHostToCUDADeviceOuter<int>(cuda_bin_upper_bounds_size, bin_upper_bounds_size, dataset->num_total_features_, __FILE__, __LINE__);
+      Log::Info("Finish copying %d bin_upper_bound", dataset->num_total_features_);
       // split whole dataset into batches
       // data_size_t cuda_batch_size = (4*1024*1024*1024) / (sizeof(double) * dataset->num_total_features_);
       data_size_t cuda_batch_size = 25*1024*1024;
@@ -1168,11 +1170,12 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
       for (int cur_cuda_batch = 0; cur_cuda_batch < num_cuda_batch; cur_cuda_batch++) {
         // process data within a batch
         data_size_t cuda_batch_start = cur_cuda_batch * cuda_batch_size;
-        double batch_value[cuda_batch_size][dataset->num_total_features_] = {0.0f};
+        data_size_t cur_cuda_batch_size = std::min(cuda_batch_size, dataset->num_data_ - cuda_batch_start);
+        double batch_value[cur_cuda_batch_size][dataset->num_total_features_] = {0.0f};
         // used to indicates which lines should do mapping, do not confound with `is_feature_added` 
         bool should_feature_mapped[dataset->num_total_features_] = {false};   // (differ across lines or not ??)
         std::vector<bool> is_feature_added(dataset->num_features_, false);
-        data_size_t cur_cuda_batch_size = std::min(cuda_batch_size, dataset->num_data_ - cuda_batch_start);
+        Log::Info("Batch %d starts parsing", cur_cuda_batch);
         OMP_INIT_EX();
         #pragma omp parallel for schedule(static) private(oneline_features) firstprivate(tmp_label)
         for (data_size_t i = 0; i < cur_cuda_batch_size; i++) {
@@ -1201,16 +1204,19 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
           OMP_LOOP_EX_END();
         }
         OMP_THROW_EX();
+        Log::Info("Batch %d finishes parsing", cur_cuda_batch);
         // copy values and should_feature_mapped to cuda
         double* cuda_batch_value_ptr[cuda_batch_size] = {nullptr};
-        for (int i = 0; i < cuda_batch_size; i++) {
+        for (int i = 0; i < cur_cuda_batch_size; i++) {
           AllocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
           CopyFromHostToCUDADeviceOuter<double>(cuda_batch_value_ptr[i], batch_value[i], dataset->num_total_features_, __FILE__, __LINE__);
         }
+        Log::Info("%d rows finish copying to cuda", cur_cuda_batch_size);
         bool* cuda_should_feature_mapped = nullptr;
         AllocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
         CopyFromHostToCUDADeviceOuter<bool>(cuda_should_feature_mapped, should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
         LaunchValueToBinKernel(cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
+        Log::Info("ValueToBinKernel finishes");
       }
     }
     else{
