@@ -1146,24 +1146,65 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
   std::vector<float> feature_row(dataset->num_features_);
   if (predict_fun_ == nullptr) {
     if (config_.device_type == std::string("cuda")) {
-      Log::Info("Using cuda ExtractFeaturesFromMemory()");
+      Log::Info("Using cuda ExtractFeaturesFromMemory() with %d groups", dataset->num_feature_groups());
+      // copy feature2group and feature2subfeature
+      int* cuda_feature2group = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<int>(&cuda_feature2group, dataset->feature2group_.data(), dataset->feature2group_.size(), __FILE__, __LINE__);
+      int* cuda_feature2subfeature = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<int>(&cuda_feature2subfeature, dataset->feature2subfeature_.data(), dataset->feature2subfeature_.size(), __FILE__, __LINE__);
+      // copy is_multi_val and MostFreqBin  
+      const int num_features = dataset->num_features_;
+      const int num_groups = dataset->num_groups_;
+      // std::vector<bool> groups_is_multi_val(num_groups);
+      bool groups_is_multi_val[num_groups] = {false};
+      for (int i = 0; i < num_groups; i++) {
+        groups_is_multi_val[i] = dataset->feature_groups_[i]->is_multi_val();
+      }
+      bool* cuda_groups_is_multi_val = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_groups_is_multi_val, groups_is_multi_val, num_groups, __FILE__, __LINE__);
+      std::vector<uint32_t> most_freq_bins(num_features);
+      for (int i = 0; i < num_features; i++) {
+        int group = dataset->feature2group_[i];
+        int sub_feature = dataset->feature2subfeature_[i];
+        most_freq_bins[i] = dataset->feature_groups_[group]->most_freq_bin_of(sub_feature);
+      }
+      uint32_t* cuda_most_freq_bins = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<uint32_t>(&cuda_most_freq_bins, most_freq_bins.data(), num_features, __FILE__, __LINE__);
+      // copy bin_type_==BinType::NumericalBin and missing_type_==MissingType::NaN for ValueToBin
+      bool bin_type_is_numerical[num_features] = {false};
+      bool missing_type_is_nan[num_features] = {false};
+      for (int i = 0; i < num_features; i++) {
+        int group = dataset->feature2group_[i];
+        int sub_feature = dataset->feature2subfeature_[i];
+        if (dataset->feature_groups_[group]->bin_type_of(sub_feature) == BinType::NumericalBin) {
+          bin_type_is_numerical[i] == true;
+        }
+        if (dataset->feature_groups_[group]->missing_type_of(sub_feature) == MissingType::NaN) {
+          missing_type_is_nan[i] == true;
+        }
+      }
+      bool* cuda_bin_type_is_numerical = nullptr;
+      bool* cuda_missing_type_is_nan = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_bin_type_is_numerical, bin_type_is_numerical, num_features, __FILE__, __LINE__);
+      InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_missing_type_is_nan, missing_type_is_nan, num_features, __FILE__, __LINE__);
       // copy BinMbin_upper_bound_  to cuda
-      double* cuda_bin_upper_bounds_ptr[dataset->num_total_features_] = {nullptr};
-      int bin_upper_bounds_size[dataset->num_total_features_] = {0};
+      double* cuda_bin_upper_bounds_ptr[num_features] = {nullptr};
+      std::vector<int> bin_upper_bounds_size(num_features, 0);
       for (int i = 0; i < dataset->num_total_features_; i++) {
         int feature_idx = dataset->used_feature_map_[i];
         if (feature_idx < 0) { continue; }
         int group = dataset->feature2group_[feature_idx];
         int sub_feature = dataset->feature2subfeature_[feature_idx];
         const std::vector<double>& bin_upper_bound = dataset->feature_groups_[group]->bin_upper_bound_of(sub_feature);
-        AllocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[i], bin_upper_bound.size(), __FILE__, __LINE__);
-        CopyFromHostToCUDADeviceOuter<double>(cuda_bin_upper_bounds_ptr[i], bin_upper_bound.data(), bin_upper_bound.size(), __FILE__, __LINE__);
-        bin_upper_bounds_size[i] = bin_upper_bound.size();
+        AllocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[feature_idx], bin_upper_bound.size(), __FILE__, __LINE__);
+        CopyFromHostToCUDADeviceOuter<double>(cuda_bin_upper_bounds_ptr[feature_idx], bin_upper_bound.data(), bin_upper_bound.size(), __FILE__, __LINE__);
+        bin_upper_bounds_size[feature_idx] = bin_upper_bound.size();
       }
       int* cuda_bin_upper_bounds_size = nullptr;
-      AllocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size, dataset->num_total_features_, __FILE__, __LINE__);
-      CopyFromHostToCUDADeviceOuter<int>(cuda_bin_upper_bounds_size, bin_upper_bounds_size, dataset->num_total_features_, __FILE__, __LINE__);
-      Log::Info("Finish copying %d bin_upper_bound", dataset->num_total_features_);
+      AllocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size, num_features, __FILE__, __LINE__);
+      CopyFromHostToCUDADeviceOuter<int>(cuda_bin_upper_bounds_size, bin_upper_bounds_size.data(), num_features, __FILE__, __LINE__);
+      Log::Info("Finish copying %d bin_upper_bound", num_features);
+      // uint32_t all_bins[dataset->num_data_][dataset->num_features_] = {0};
       // split whole dataset into batches
       // data_size_t cuda_batch_size = (4*1024*1024*1024) / (sizeof(double) * dataset->num_total_features_);
       const data_size_t cuda_batch_size = 25*1024*1024;
@@ -1172,10 +1213,9 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         // process data within a batch
         data_size_t cuda_batch_start = cur_cuda_batch * cuda_batch_size;
         data_size_t cur_cuda_batch_size = std::min(cuda_batch_size, dataset->num_data_ - cuda_batch_start);
-        double batch_value[cur_cuda_batch_size][dataset->num_total_features_] = {0.0f};
-        // used to indicates which lines should do mapping, do not confound with `is_feature_added` 
-        bool should_feature_mapped[dataset->num_total_features_] = {false};   // (differ across lines or not ??)
-        std::vector<bool> is_feature_added(dataset->num_features_, false);
+        double batch_value[cur_cuda_batch_size][num_features] = {0.0f};
+        // std::vector<bool> is_feature_added(num_features, false);
+        bool is_feature_added[num_features] = {false};
         Log::Info("Batch %d starts parsing", cur_cuda_batch);
         OMP_INIT_EX();
         #pragma omp parallel for schedule(static) private(oneline_features) firstprivate(tmp_label)
@@ -1191,8 +1231,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
             int feature_idx = dataset->used_feature_map_[inner_data.first];
             if (feature_idx >= 0) {
               is_feature_added[feature_idx] = true;
-              batch_value[i][inner_data.first] = inner_data.second;
-              should_feature_mapped[inner_data.first] = true;
+              batch_value[i][feature_idx] = inner_data.second;
             } else {
               if (inner_data.first == weight_idx_) {
                 dataset->metadata_.SetWeightAt(i, static_cast<label_t>(inner_data.second));
@@ -1209,19 +1248,22 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         // copy values and should_feature_mapped to cuda
         double* cuda_batch_value_ptr[cur_cuda_batch_size] = {nullptr};
         for (int i = 0; i < cur_cuda_batch_size; i++) {
-          AllocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
-          CopyFromHostToCUDADeviceOuter<double>(cuda_batch_value_ptr[i], batch_value[i], dataset->num_total_features_, __FILE__, __LINE__);
+          AllocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], num_features, __FILE__, __LINE__);
+          CopyFromHostToCUDADeviceOuter<double>(cuda_batch_value_ptr[i], batch_value[i], num_features, __FILE__, __LINE__);
         }
         Log::Info("%d rows finish copying to cuda", cur_cuda_batch_size);
         bool* cuda_should_feature_mapped = nullptr;
-        AllocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
-        CopyFromHostToCUDADeviceOuter<bool>(cuda_should_feature_mapped, should_feature_mapped, dataset->num_total_features_, __FILE__, __LINE__);
+        AllocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, num_features, __FILE__, __LINE__);
+        CopyFromHostToCUDADeviceOuter<bool>(cuda_should_feature_mapped, is_feature_added, num_features, __FILE__, __LINE__);
         // temporarily store bins in this 2d array
         uint32_t* cuda_batch_bins_ptr[cur_cuda_batch_size] = {nullptr};
         for (int i = 0; i < cur_cuda_batch_size; i++) {
-          AllocateCUDAMemoryOuter<uint32_t>(&cuda_batch_bins_ptr[i], dataset->num_total_features_, __FILE__, __LINE__);
+          AllocateCUDAMemoryOuter<uint32_t>(&cuda_batch_bins_ptr[i], num_features, __FILE__, __LINE__);
         }
-        LaunchValueToBinKernel(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, dataset->num_total_features_);
+        LaunchValueToBinKernel(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, 
+                              cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, num_features,
+                              cuda_feature2group, cuda_feature2subfeature, cuda_groups_is_multi_val, cuda_most_freq_bins,
+                              cuda_bin_type_is_numerical, cuda_missing_type_is_nan);
         Log::Info("ValueToBinKernel finishes");
         // free useless space
         DeallocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, __FILE__, __LINE__);
@@ -1233,6 +1275,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
       for (int i = 0; i < dataset->num_total_features_; i++) {
         DeallocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[i],  __FILE__, __LINE__);
       }
+      // dataset->CreateCUDAColumnDataDirectly(cuda_batch_bins_ptr);
     }
     else{
       OMP_INIT_EX();

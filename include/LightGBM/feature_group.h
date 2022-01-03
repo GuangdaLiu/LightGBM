@@ -526,6 +526,23 @@ class FeatureGroup {
     return bin_mappers_[sub_feature_index]->bin_upper_bound();
   }
 
+  bool is_multi_val() {
+    return is_multi_val_;
+  }
+
+  int32_t most_freq_bin_of(int sub_feature_index) {
+    return bin_mappers_[sub_feature_index]->GetMostFreqBin();
+  }
+
+  BinType bin_type_of(int sub_feature_idx) {
+    return bin_mappers_[sub_feature_idx]->bin_type();
+  }
+
+  MissingType missing_type_of(int sub_feature_idx) {
+    return bin_mappers_[sub_feature_idx]->missing_type();
+  }
+
+
  private:
   void CreateBinData(int num_data, bool is_multi_val, bool force_dense, bool force_sparse) {
     if (is_multi_val) {

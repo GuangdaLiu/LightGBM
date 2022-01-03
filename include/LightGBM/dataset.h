@@ -339,6 +339,16 @@ class Dataset {
     }
   }
 
+  inline void FinishOneRow(int tid, data_size_t row_idx, const bool* is_feature_added) {
+    if (is_finish_load_) { return; }
+    for (auto fidx : feature_need_push_zeros_) {
+      if (is_feature_added[fidx]) { continue; }
+      const int group = feature2group_[fidx];
+      const int sub_feature = feature2subfeature_[fidx];
+      feature_groups_[group]->PushData(tid, sub_feature, row_idx, 0.0f);
+    }
+  }
+
   inline void PushOneRow(int tid, data_size_t row_idx, const std::vector<double>& feature_values) {
     if (is_finish_load_) { return; }
     for (size_t i = 0; i < feature_values.size() && i < static_cast<size_t>(num_total_features_); ++i) {
