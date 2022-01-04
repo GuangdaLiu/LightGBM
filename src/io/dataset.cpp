@@ -378,6 +378,7 @@ void Dataset::Construct(std::vector<std::unique_ptr<BinMapper>>* bin_mappers,
     int cur_cnt_features = static_cast<int>(cur_features.size());
     group_feature_start_[i] = cur_fidx;
     group_feature_cnt_[i] = cur_cnt_features;
+    std::vector<int> subfeature2feature(cur_cnt_features, 0);
     // get bin_mappers
     std::vector<std::unique_ptr<BinMapper>> cur_bin_mappers;
     for (int j = 0; j < cur_cnt_features; ++j) {
@@ -391,10 +392,11 @@ void Dataset::Construct(std::vector<std::unique_ptr<BinMapper>>* bin_mappers,
           cur_bin_mappers.back()->GetMostFreqBin()) {
         feature_need_push_zeros_.push_back(cur_fidx);
       }
+      subfeature2feature[j] = cur_fidx;
       ++cur_fidx;
     }
     feature_groups_.emplace_back(std::unique_ptr<FeatureGroup>(
-      new FeatureGroup(cur_cnt_features, group_is_multi_val[i], &cur_bin_mappers, num_data_, i)));
+      new FeatureGroup(cur_cnt_features, group_is_multi_val[i], &cur_bin_mappers, num_data_, i, subfeature2feature)));
     num_total_bin += feature_groups_[i]->num_total_bin_;
     group_bin_boundaries_.push_back(num_total_bin);
   }
@@ -439,7 +441,7 @@ void Dataset::FinishLoad() {
     }
   }
   if (device_type_ == std::string("cuda")) {
-    CreateCUDAColumnData();
+    // CreateCUDAColumnData();
     metadata_.CreateCUDAMetadata(gpu_device_id_);
   } else {
     cuda_column_data_.reset(nullptr);

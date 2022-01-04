@@ -4,7 +4,8 @@
 
 namespace LightGBM {
 
-__global__ void ValueToBinKernel(uint32_t* cuda_batch_bins_ptr[], double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], 
+__global__ void ValueToBinKernel(uint32_t* cuda_cols_ptr[], const int cuda_feature2CUDACol[], const data_size_t num_data,
+                                double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], uint32_t* cuda_bin_offsets[],
                                 const bool cuda_should_feature_mapped[], double* cuda_batch_value_ptr[], const data_size_t cur_cuda_batch_size,
                                 const int cuda_feature2group[], const int cuda_feature2subfeature[], const bool cuda_groups_is_multi_val[], const uint32_t cuda_most_freq_bins[],
                                 const bool cuda_bin_type_is_numerical[], const bool cuda_missing_type_is_nan[], unsigned int* cuda_categorical_2_bin_ptr[]) {
@@ -34,24 +35,34 @@ __global__ void ValueToBinKernel(uint32_t* cuda_batch_bins_ptr[], double* cuda_b
       bin = cuda_categorical_2_bin_ptr[col_idx][int_value];
     }
     uint32_t most_freq_bin = cuda_most_freq_bins[col_idx];
-    if (bin == most_freq_bin) {
-      return;
-    }
+    // if (bin == most_freq_bin) {
+    //   return;
+    // } // most frequent bins are also stored as CUDA memory has been allocated
     if (most_freq_bin == 0) {
       bin -= 1;
     }
-    cuda_batch_bins_ptr[row_idx][col_idx] = bin;
+    const int group = cuda_feature2group[col_idx];
+    const int sub_feature = cuda_feature2subfeature[col_idx];
+    const int cuda_col = cuda_feature2CUDACol[col_idx];
+    if (cuda_groups_is_multi_val[group]) {
+      cuda_cols_ptr[cuda_col][row_idx] = bin;
+    } else {
+      bin += cuda_bin_offsets[group][sub_feature];
+      cuda_cols_ptr[cuda_col][sub_feature * num_data + row_idx] = bin;
+    }
   }
 }
 
-void DatasetLoader::LaunchValueToBinKernel(uint32_t* cuda_batch_bins_ptr[], double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], 
+void DatasetLoader::LaunchValueToBinKernel(uint32_t* cuda_cols_ptr[], const int cuda_feature2CUDACol[], const data_size_t num_data,
+                                          double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], uint32_t* cuda_bin_offsets[],
                                           const bool cuda_should_feature_mapped[], double* cuda_batch_value_ptr[], const data_size_t cur_cuda_batch_size, const int num_features,
                                           const int cuda_feature2group[], const int cuda_feature2subfeature[], const bool cuda_groups_is_multi_val[], const uint32_t cuda_most_freq_bins[],
                                           const bool cuda_bin_type_is_numerical[], const bool cuda_missing_type_is_nan[], unsigned int* cuda_categorical_2_bin_ptr[]) {
   const int num_threads_per_block = 1024;
   int num_blocks_for_row = (cur_cuda_batch_size + num_threads_per_block - 1) / num_threads_per_block;
   dim3 num_blocks(num_blocks_for_row, num_features);
-  ValueToBinKernel<<<num_blocks, num_threads_per_block>>>(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, 
+  ValueToBinKernel<<<num_blocks, num_threads_per_block>>>(cuda_cols_ptr, cuda_feature2CUDACol, num_data,
+                                                          cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_bin_offsets,
                                                           cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size,
                                                           cuda_feature2group, cuda_feature2subfeature, cuda_groups_is_multi_val, cuda_most_freq_bins,
                                                           cuda_bin_type_is_numerical, cuda_missing_type_is_nan, cuda_categorical_2_bin_ptr);

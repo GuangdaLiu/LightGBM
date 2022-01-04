@@ -58,7 +58,8 @@ class DatasetLoader {
   /*! \brief Extract local features from memory */
   void ExtractFeaturesFromMemory(std::vector<std::string>* text_data, const Parser* parser, Dataset* dataset);
 
-  void LaunchValueToBinKernel(uint32_t* cuda_batch_bins_ptr[], double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], 
+  void LaunchValueToBinKernel(uint32_t* cuda_cols_ptr[], const int cuda_feature2CUDACol[], const data_size_t num_data,
+                              double* cuda_bin_upper_bounds_ptr[], const int cuda_bin_upper_bounds_size[], uint32_t* cuda_bin_offsets[],
                               const bool cuda_should_feature_mapped[], double* cuda_batch_value_ptr[], const data_size_t cur_cuda_batch_size, const int num_features,
                               const int cuda_feature2group[], const int cuda_feature2subfeature[], const bool cuda_groups_is_multi_val[], const uint32_t cuda_most_freq_bins[],
                               const bool cuda_bin_type_is_numerical[], const bool cuda_missing_type_is_nan[], unsigned int* cuda_categorical_2_bin_ptr[]);

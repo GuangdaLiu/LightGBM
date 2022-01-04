@@ -37,8 +37,9 @@ class FeatureGroup {
   */
   FeatureGroup(int num_feature, int8_t is_multi_val,
     std::vector<std::unique_ptr<BinMapper>>* bin_mappers,
-    data_size_t num_data, int group_id) :
-    num_feature_(num_feature), is_multi_val_(is_multi_val > 0), is_sparse_(false) {
+    data_size_t num_data, int group_id, 
+    const std::vector<int>& subfeature2feature) :
+    num_feature_(num_feature), subfeature2feature_(subfeature2feature), is_multi_val_(is_multi_val > 0), is_sparse_(false) {
     CHECK_EQ(static_cast<int>(bin_mappers->size()), num_feature);
     auto& ref_bin_mappers = *bin_mappers;
     double sum_sparse_rate = 0.0f;
@@ -546,6 +547,18 @@ class FeatureGroup {
     return bin_mappers_[sub_feature_idx]->categorical_2_bin();
   }
 
+  const std::vector<uint32_t>& bin_offsets() {
+    return bin_offsets_;
+  }
+
+  int num_feature() {
+    return num_feature_;
+  }
+
+  int subfeature2feature(int sub_feature_idx) {
+    return subfeature2feature_[sub_feature_idx];
+  }
+
 
  private:
   void CreateBinData(int num_data, bool is_multi_val, bool force_dense, bool force_sparse) {
@@ -590,6 +603,8 @@ class FeatureGroup {
   bool is_dense_multi_val_;
   bool is_sparse_;
   int num_total_bin_;
+
+  std::vector<int> subfeature2feature_;
 };
 
 }  // namespace LightGBM
