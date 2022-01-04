@@ -1187,6 +1187,21 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
       bool* cuda_missing_type_is_nan = nullptr;
       InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_bin_type_is_numerical, bin_type_is_numerical, num_features, __FILE__, __LINE__);
       InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_missing_type_is_nan, missing_type_is_nan, num_features, __FILE__, __LINE__);
+      // copy categorical_2_bin
+      unsigned int* cuda_categorical_2_bin_ptr[num_features] = {nullptr};
+      for (int i = 0; i < num_features; i++) {
+        int group = dataset->feature2group_[i];
+        int sub_feature = dataset->feature2subfeature_[i];
+        int max_key = 0;
+        for (const auto& c2b : dataset->feature_groups_[group]->categorical_2_bin_of(sub_feature)) {
+          max_key = std::max<int>(max_key, c2b.first);
+        }
+        unsigned int categorical_2_bin[max_key+1] = {0};
+        for (const auto& c2b : dataset->feature_groups_[group]->categorical_2_bin_of(sub_feature)) {
+          categorical_2_bin[c2b.first] = c2b.second;
+        }
+        InitCUDAMemoryFromHostMemoryOuter<unsigned int>(&cuda_categorical_2_bin_ptr[i], categorical_2_bin, max_key+1, __FILE__, __LINE__);
+      }
       // copy BinMbin_upper_bound_  to cuda
       double* cuda_bin_upper_bounds_ptr[num_features] = {nullptr};
       std::vector<int> bin_upper_bounds_size(num_features, 0);
@@ -1263,7 +1278,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         LaunchValueToBinKernel(cuda_batch_bins_ptr, cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, 
                               cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, num_features,
                               cuda_feature2group, cuda_feature2subfeature, cuda_groups_is_multi_val, cuda_most_freq_bins,
-                              cuda_bin_type_is_numerical, cuda_missing_type_is_nan);
+                              cuda_bin_type_is_numerical, cuda_missing_type_is_nan, cuda_categorical_2_bin_ptr);
         Log::Info("ValueToBinKernel finishes");
         // free useless space
         DeallocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, __FILE__, __LINE__);

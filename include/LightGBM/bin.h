@@ -200,6 +200,10 @@ class BinMapper {
 
   inline const std::vector<double>& bin_upper_bound() const { return bin_upper_bound_; }
 
+  inline const std::unordered_map<int, unsigned int>& categorical_2_bin() const {
+    return categorical_2_bin_;
+  }
+
  private:
   /*! \brief Number of bins */
   int num_bin_;

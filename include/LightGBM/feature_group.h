@@ -542,6 +542,10 @@ class FeatureGroup {
     return bin_mappers_[sub_feature_idx]->missing_type();
   }
 
+  const std::unordered_map<int, unsigned int>& categorical_2_bin_of(int sub_feature_idx) {
+    return bin_mappers_[sub_feature_idx]->categorical_2_bin();
+  }
+
 
  private:
   void CreateBinData(int num_data, bool is_multi_val, bool force_dense, bool force_sparse) {
