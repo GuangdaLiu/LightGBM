@@ -12,7 +12,7 @@ __global__ void ValueToBinKernel(uint32_t* cuda_cols_ptr[], const int cuda_featu
   data_size_t row_idx = blockIdx.x * blockDim.x + threadIdx.x;
   int col_idx = blockIdx.y;
   if (row_idx < cur_cuda_batch_size && cuda_should_feature_mapped[col_idx]) {
-    double value = cuda_batch_value_ptr[row_idx][col_idx];
+    double value = cuda_batch_value_ptr[col_idx][row_idx];
     uint32_t bin = 0;
     if (cuda_bin_type_is_numerical[col_idx]) {
       int l = 0;
