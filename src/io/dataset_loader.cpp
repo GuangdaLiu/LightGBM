@@ -1188,7 +1188,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
       InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_bin_type_is_numerical, bin_type_is_numerical, num_features, __FILE__, __LINE__);
       InitCUDAMemoryFromHostMemoryOuter<bool>(&cuda_missing_type_is_nan, missing_type_is_nan, num_features, __FILE__, __LINE__);
       // copy categorical_2_bin
-      unsigned int* cuda_categorical_2_bin_ptr[num_features] = {nullptr};
+      unsigned int* categorical_2_bin_ptr_cuda[num_features] = {nullptr};
       for (int i = 0; i < num_features; i++) {
         int group = dataset->feature2group_[i];
         int sub_feature = dataset->feature2subfeature_[i];
@@ -1200,16 +1200,20 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         for (const auto& c2b : dataset->feature_groups_[group]->categorical_2_bin_of(sub_feature)) {
           categorical_2_bin[c2b.first] = c2b.second;
         }
-        InitCUDAMemoryFromHostMemoryOuter<unsigned int>(&cuda_categorical_2_bin_ptr[i], categorical_2_bin, max_key+1, __FILE__, __LINE__);
+        InitCUDAMemoryFromHostMemoryOuter<unsigned int>(&categorical_2_bin_ptr_cuda[i], categorical_2_bin, max_key+1, __FILE__, __LINE__);
       }
+      unsigned int** cuda_categorical_2_bin_ptr = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<unsigned int*>(&cuda_categorical_2_bin_ptr, categorical_2_bin_ptr_cuda, num_features, __FILE__, __LINE__);
       // copy bin_offsets
-      uint32_t* cuda_bin_offsets[num_groups] = {nullptr};
+      uint32_t* bin_offsets_ptr_cuda[num_groups] = {nullptr};
       for (int i = 0; i < num_groups; i++) {
         const std::vector<uint32_t>& bin_offsets = dataset->feature_groups_[i]->bin_offsets();
-        InitCUDAMemoryFromHostMemoryOuter<uint32_t>(&cuda_bin_offsets[i], bin_offsets.data(), bin_offsets.size(), __FILE__, __LINE__);
+        InitCUDAMemoryFromHostMemoryOuter<uint32_t>(&bin_offsets_ptr_cuda[i], bin_offsets.data(), bin_offsets.size(), __FILE__, __LINE__);
       }
+      uint32_t** cuda_bin_offsets_ptr = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<uint32_t*>(&cuda_bin_offsets_ptr, bin_offsets_ptr_cuda, num_groups, __FILE__, __LINE__);
       // copy BinMbin_upper_bound_  to cuda
-      double* cuda_bin_upper_bounds_ptr[num_features] = {nullptr};
+      double* bin_upper_bounds_ptr_cuda[num_features] = {nullptr};
       std::vector<int> bin_upper_bounds_size(num_features, 0);
       for (int i = 0; i < dataset->num_total_features_; i++) {
         int feature_idx = dataset->used_feature_map_[i];
@@ -1217,13 +1221,13 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         int group = dataset->feature2group_[feature_idx];
         int sub_feature = dataset->feature2subfeature_[feature_idx];
         const std::vector<double>& bin_upper_bound = dataset->feature_groups_[group]->bin_upper_bound_of(sub_feature);
-        AllocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[feature_idx], bin_upper_bound.size(), __FILE__, __LINE__);
-        CopyFromHostToCUDADeviceOuter<double>(cuda_bin_upper_bounds_ptr[feature_idx], bin_upper_bound.data(), bin_upper_bound.size(), __FILE__, __LINE__);
+        InitCUDAMemoryFromHostMemoryOuter<double>(&bin_upper_bounds_ptr_cuda[feature_idx], bin_upper_bound.data(), bin_upper_bound.size(), __FILE__, __LINE__);
         bin_upper_bounds_size[feature_idx] = bin_upper_bound.size();
       }
+      double** cuda_bin_upper_bounds_ptr = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<double*>(&cuda_bin_upper_bounds_ptr, bin_upper_bounds_ptr_cuda, num_features, __FILE__, __LINE__);
       int* cuda_bin_upper_bounds_size = nullptr;
-      AllocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size, num_features, __FILE__, __LINE__);
-      CopyFromHostToCUDADeviceOuter<int>(cuda_bin_upper_bounds_size, bin_upper_bounds_size.data(), num_features, __FILE__, __LINE__);
+      InitCUDAMemoryFromHostMemoryOuter<int>(&cuda_bin_upper_bounds_size, bin_upper_bounds_size.data(), num_features, __FILE__, __LINE__);
       // construct CUDA columns to store bins
       int feature2CUDACol[num_features] = {-1};
       std::vector<uint32_t*> cuda_cols_ptr;
@@ -1240,6 +1244,7 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         } else {
           uint32_t* cuda_col = nullptr;
           AllocateCUDAMemoryOuter<uint32_t>(&cuda_col, group_num_feature * dataset->num_data(), __FILE__, __LINE__);
+          Log::Info("Allocate %d cuda memory",group_num_feature * dataset->num_data()); 
           cuda_cols_ptr.push_back(cuda_col);
           for (int sub_feature_index = 0; sub_feature_index < group_num_feature; ++sub_feature_index) {
             int feature_index = dataset->feature_groups_[feature_group_index]->subfeature2feature(sub_feature_index);
@@ -1247,6 +1252,8 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
           }
         }
       }
+      uint32_t** cuda_cuda_cols_ptr = nullptr;
+      InitCUDAMemoryFromHostMemoryOuter<uint32_t*>(&cuda_cuda_cols_ptr, cuda_cols_ptr.data(), cuda_cols_ptr.size(), __FILE__, __LINE__);
       int* cuda_feature2CUDACol = nullptr;
       InitCUDAMemoryFromHostMemoryOuter<int>(&cuda_feature2CUDACol, feature2CUDACol, num_features, __FILE__, __LINE__);
       // split whole dataset into batches
@@ -1293,10 +1300,12 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
             std::chrono::duration<double, std::milli>(t4 - t3) * 1e-3);
         // copy values and should_feature_mapped to cuda
         t3 = std::chrono::high_resolution_clock::now();
-        double* cuda_batch_value_ptr[num_features] = {nullptr};
+        double* batch_value_ptr_cuda[num_features] = {nullptr};
         for (int i = 0; i < num_features; i++) {
-          InitCUDAMemoryFromHostMemoryOuter<double>(&cuda_batch_value_ptr[i], batch_value[i], cur_cuda_batch_size, __FILE__, __LINE__);
+          InitCUDAMemoryFromHostMemoryOuter<double>(&batch_value_ptr_cuda[i], batch_value[i], cur_cuda_batch_size, __FILE__, __LINE__);
         }
+        double** cuda_batch_value_ptr = nullptr;
+        InitCUDAMemoryFromHostMemoryOuter<double*>(&cuda_batch_value_ptr, batch_value_ptr_cuda, num_features, __FILE__, __LINE__);
         t4 = std::chrono::high_resolution_clock::now();
         Log::Info("Batch: %d: copy data to CUDA in %.3f seconds", cur_cuda_batch,
             std::chrono::duration<double, std::milli>(t4 - t3) * 1e-3);
@@ -1304,23 +1313,15 @@ void DatasetLoader::ExtractFeaturesFromMemory(std::vector<std::string>* text_dat
         AllocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, num_features, __FILE__, __LINE__);
         CopyFromHostToCUDADeviceOuter<bool>(cuda_should_feature_mapped, is_feature_added, num_features, __FILE__, __LINE__);
         t3 = std::chrono::high_resolution_clock::now();
-        LaunchValueToBinKernel(cuda_cols_ptr.data(), cuda_feature2CUDACol, dataset->num_data(),
-                              cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_bin_offsets,
+        LaunchValueToBinKernel(cuda_cuda_cols_ptr, cuda_feature2CUDACol, dataset->num_data(),
+                              cuda_bin_upper_bounds_ptr, cuda_bin_upper_bounds_size, cuda_bin_offsets_ptr,
                               cuda_should_feature_mapped, cuda_batch_value_ptr, cur_cuda_batch_size, num_features,
                               cuda_feature2group, cuda_feature2subfeature, cuda_groups_is_multi_val, cuda_most_freq_bins,
                               cuda_bin_type_is_numerical, cuda_missing_type_is_nan, cuda_categorical_2_bin_ptr);
+        SynchronizeCUDADeviceOuter(__FILE__, __LINE__);
         t4 = std::chrono::high_resolution_clock::now();
         Log::Info("Batch %d, finish ValueToBinKernel in %.3f seconds", cur_cuda_batch,
             std::chrono::duration<double, std::milli>(t4 - t3) * 1e-3);
-        // free useless space
-        DeallocateCUDAMemoryOuter<bool>(&cuda_should_feature_mapped, __FILE__, __LINE__);
-        for (int i = 0; i < num_features; i++) {
-          DeallocateCUDAMemoryOuter<double>(&cuda_batch_value_ptr[i], __FILE__, __LINE__);
-        }
-      }
-      DeallocateCUDAMemoryOuter<int>(&cuda_bin_upper_bounds_size,  __FILE__, __LINE__);
-      for (int i = 0; i < dataset->num_total_features_; i++) {
-        DeallocateCUDAMemoryOuter<double>(&cuda_bin_upper_bounds_ptr[i],  __FILE__, __LINE__);
       }
       dataset->CreateCUDAColumnData();
     }
